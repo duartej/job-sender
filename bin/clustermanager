@@ -10,9 +10,9 @@
 
 DEBUG=True
 JOBEVT=500
-from jobSender.workenvfactory import athenajob,blindjob
-from jobSender.clusterfactory import cluster_builder
-from jobSender.jobssender     import bookeepingjobs,accessingjobsinfo,job
+from job_sender.workenvfactory import athenajob,blindjob
+from job_sender.clusterfactory import cluster_builder
+from job_sender.jobssender     import bookeepingjobs,accessingjobsinfo,job
 
 if __name__ == '__main__':
     from optparse import OptionParser,OptionGroup
