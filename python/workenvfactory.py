@@ -757,7 +757,7 @@ class marlinjob(workenv):
     See __init__ method to instatiate the class
     """
     def __init__(self,bashscriptname,steeringfile,
-            inputfiles,athenamode = 'jo',**kw):
+            inputfiles,**kw):
         """Instantiation
 
         Parameters
@@ -920,9 +920,8 @@ class marlinjob(workenv):
                 if theprocdict[u'@name'] != processor_name:
                     raise RuntimeError('Processor name "{0}" does not corresponds to"\
                         " any processor in the steering file'.format(processor_name))
-        
         # Check that it is activated 
-        if len(filter(lambda x: x['@name'] = processor_name,\
+        if len(filter(lambda x: x['@name'] == processor_name,\
                 thxmldict['marlin']['execute']['processor'])) == 0:
             raise RuntimeError('Processor "{0}" not activated!'.format(processor_name))
         
