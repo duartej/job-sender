@@ -832,7 +832,7 @@ class marlinjob(workenv):
         """Relevant environment in an Marlin job: MARLIN
         """
         self.typealias = 'Marlin'
-        self.relevantvar =  [ ("MARLIN","echo") ] 
+        self.relevantvar =  [ ("MARLIN","source") ] 
 
     def use_steering_file(self):
         """The steering file is copied in the local path
@@ -927,200 +927,55 @@ class marlinjob(workenv):
         
         return theprocdict
 
-    
-    def steering_file_modification(self):
-        """Substitute the steering files with the concrete values
-        """
-        import xmltodict
+    #def steering_file_modification(self):
+    #    """Substitute the steering files with the concrete values
+    #    """
+    #    XXX: NOT USE xmltodict, lxplus not available 
+    #         USE xml
+    #    import xmltodict
 
-        with open(self.steering_file) as f:
-            xml_steering = xmltodic.parse(f.read())
-        # The global parameters
-        par_list = xml_steering['marlin']['global']['parameter']
-        # -- Number of events to process
-        self._set_field_at(par_list,u'MaxRecordNumber',self.evtmax)
-        # -- Skip events
-        self._set_field_at(par_list,u'SkipNEvents',self.skipevts)
-        # -- Gear files
-        self._set_field_at(par_list,u'GearXMLFile',self.gear_file)
-        # -- input files
-        inputfiles_str = ''
-        for _f in self.inputfiles:
-            inputfiles_str += _f+" "
-        self._set_field_at(par_list,u'LCIOInputFiles',inputfiles_str[:-1])
+    #    with open(self.steering_file) as f:
+    #        xml_steering = xmltodic.parse(f.read())
+    #    # The global parameters
+    #    par_list = xml_steering['marlin']['global']['parameter']
+    #    # -- Number of events to process
+    #    self._set_field_at(par_list,u'MaxRecordNumber',self.evtmax)
+    #    # -- Skip events
+    #    self._set_field_at(par_list,u'SkipNEvents',self.skipevts)
+    #    # -- Gear files
+    #    self._set_field_at(par_list,u'GearXMLFile',self.gear_file)
+    #    # -- input files
+    #    inputfiles_str = ''
+    #    for _f in self.inputfiles:
+    #        inputfiles_str += _f+" "
+    #    self._set_field_at(par_list,u'LCIOInputFiles',inputfiles_str[:-1])
 
-        with open(self.joboption,"w") as f:
-            f.writelines(lines)
+    #    with open(self.joboption,"w") as f:
+    #        f.writelines(lines)
 
 
     def preparejobs(self,extra_asetup=''):
-        """..method:: preparejobs() -> listofjobs
-        
-        main function which builds the folder structure
+        """Main function which builds the folder structure
         and the needed files of the job, in order to be
         sent to the cluster
-        """
-        import os
-        # Obtaining some Athena related-info (asetup,release,...)
-        usersetupfolder = self.getuserasetupfolder()
-        athenaversion = os.getenv('AtlasVersion')
-        compiler      = self.getcompiler()
-        
-        # if is an athena job, be sure that the FilesInput and SkipEvents
-        # orders are received and locked, i.e. modify accordingly the JO
-        if not self.isTFJ:
-            self.jobOption_modification()
-
-        # setting up the folder structure to send the jobs
-        # including the bashscripts
-        return self.settingfolders(usersetupfolder,athenaversion,compiler,extra_asetup)
-
-
-    def getuserasetupfolder(self):
-        """..method:: getuserasetupfolder() -> fullnameuser
-        get the asetup folder (where the asetup was launch)
-        """
-        import os
-
-        ldfolders = os.getenv('LD_LIBRARY_PATH')
-        user = os.getenv('USER')
-        basedir = None
-        for i in ldfolders.split(':'):
-            if i.find(user) != -1 and i.find('InstallArea'):
-                basedir=i[:i.find('InstallArea')-1]
-        # check that the folder exists
-        if not basedir or not os.path.isdir(basedir):
-            message = 'Check the method (getuserasetupfolder) to'
-            message += 'extract the user base directory. The algorithm'
-            message += 'didn\'t find the path'
-            raise RuntimeError(message)
-
-        return basedir
-
-    def getcompiler(self):
-        """..method:: getcompiler() -> compilername
-        
-        Get the compiler version X.Y.Z, returning gccXY
-        """
-        import platform
-        return platform.python_compiler().lower().replace(' ','').replace('.','')[:-1]
-
-    def createbashscript(self,**kw):
-        """..method:: createbashscript 
-         
-        function which creates the specific bashscript(s). Depend on the 
-        type of job
-        """
-        import os
-        import datetime,time
-
-        class placeholder(object):
-            def __init__(self):
-                self.setupfolder=None
-                self.version=None
-                self.gcc =None
-                self.extra_asetup=''
-
-            def haveallvars(self):
-                if not self.setupfolder or not self.version or not self.gcc:
-                    return False
-                return True
-        
-        ph = placeholder()
-        for var,value in kw.iteritems():
-            setattr(ph,var,value)
-        
-        if not ph.haveallvars():
-            message = "Note that the asetup folder, the Athena version and"
-            message += " the version of the gcc compiler are needed to build the"
-            message += " bashscript"
-            raise RuntimeError(message)
-
-        ts = time.time()
-        timestamp = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-        bashfile = '#!/bin/bash\n\n'
-        bashfile += '# File created by the %s class [%s]\n\n' % (self.__class__.__name__,timestamp)
-        bashfile += 'cd '+ph.setupfolder+'\n'
-        bashfile += 'source $AtlasSetup/scripts/asetup.sh %s,%s,here %s\n' % (ph.version,ph.gcc,ph.extra_asetup)
-        bashfile += 'cd -\n'
-        # Create a guard against malformed Workers (those which uses the same $HOME)
-        bashfile += 'tmpdir=`mktemp -d`\ncd $tmpdir;\n\n'
-        if self.isTFJ:
-            # Transformation job
-            # XXX: Create a separate file containing the list of input files:
-            fileslist_name = "fileslist_{0}.txt".format(self.scriptname.replace(".sh",""))
-            with open(fileslist_name,"w") as _f:
-                _f.write(' '.join(self.inputfiles)+' ')
-                _f.close()
-            # convert the list of files into a space separated string (' '.join(self.inputfiles)
-            bashfile += '{0} --fileValidation False --maxEvents {1}'\
-                    ' --skipEvents {2} --ignoreErrors \'True\' {3} --input{4}File {5} '\
-                    '--output{6}File {7}'.format(self.tf_command,ph.nevents,ph.skipevts,self.tf_parameters,
-                    self.tf_input_type,'`cat '+os.path.join(os.getcwd(),fileslist_name)+'`',self.tf_output_type,self.outputfile)
-                    #self.tf_input_type,' '.join(self.inputfiles),self.tf_output_type,self.outputfile)
-        else:
-            # athena.py jobOption.py job
-            bashfile += 'cp %s .\n' % self.joboption
-            bashfile +='athena.py -c "SkipEvents=%i; EvtMax=%i; FilesInput=%s;" ' % \
-                    (ph.skipevts,ph.nevents,str(self.inputfiles))
-            # Introduce a new key with any thing you want to introduce in -c : kw['Name']='value'
-            bashfile += self.joboption+" \n"
-        bashfile +="\ncp *.root %s/\n" % os.getcwd()
-        # remove the tmpdir
-        bashfile +="rm -rf $tmpdir\n"
-        f=open(self.scriptname,"w")
-        f.write(bashfile)
-        f.close()
-        os.chmod(self.scriptname,0755)
-
-    def replace_str_infile(self,strtosubst,finalstr,filename=None):
-        """Replaces a string inside a file, useful for per-job dependent
-        string
-
-        Parameters
-        ----------
-        strtosubst: str
-            the string to be substituted
-        finalstr: the expression to substitute
-        filename: str [Default: self.scriptname]
-            the name of the file
-        """
-        if not filename:
-            filename=self.scriptname
-        with open(filename) as _f:
-            oldfiledata = _f.read()
-        filedata=oldfiledata.replace(strtosubst,str(finalstr))
-        # return to write
-        with open(filename,"w") as _fo:
-            _fo.write(filedata)
-            _fo.close()
-
-    def settingfolders(self,usersetupfolder,athenaversion,gcc,extra_asetup=''):
-        """..method:: settingfolders()
-        create the folder structure to launch the jobs: for each job
-        a folder is created following the notation:
-          * AthenaJob_self.jobname_jobdsc.index
-          
+        A folder is created following the notation:
+          * JOB_self.jobname_jobdsc.index
         """
         import os
         from jobssender import jobdescription
 
         cwd=os.getcwd()
+        # Create the copy of the steering file
+        # self.steering_file_modification()
 
         jdlist = []
-        i=0
-        for (skipevts,nevents) in self.skipandperform:
+        for (i,(skipevts,nevents)) in enumerate(self.skipandperform):
             # create a folder
-            foldername = "%sJob_%s_%i" % (self.typealias,self.jobname,i)
+            foldername = "{0}Job_{1}_{2}".format(self.typealias,self.jobname,i)
             os.mkdir(foldername)
             os.chdir(foldername)
             # create the local bashscript
-            self.createbashscript(setupfolder=usersetupfolder,\
-                    version=athenaversion,\
-                    gcc=gcc,skipevts=skipevts,nevents=nevents,extra_asetup=extra_asetup)
-            # XXX: Provisional (or not): Some keywords to be substitute 
-            # (job-index dependent)
-            self.replace_str_infile("%JOBNUMBER_PLUS_ONE",i+1)
+            self.createbashscript(skipevents=skipevts,nevents=nevents)
             # Registring the jobs in jobdescription class instances
             jdlist.append( 
                     jobdescription(path=foldername,script=self.jobname,index=i)
@@ -1130,69 +985,91 @@ class marlinjob(workenv):
             jdlist[-1].workenv = self
             #self.setjobstate(jdlist[-1],'configuring') ---> Should I define one?
             os.chdir(cwd)
-            i+=1
-
         return jdlist
 
-    # DEPRECATED!!
-    #def getlistofjobs(self):
-    #    """..method:: getlistofjobs() -> [ listofjobs ]
-    #    return the list of prepared jobs, if any, None otherwise
+    def createbashscript(self,**kw):
+        """Creates the specific bashscript(s). Depend on the 
+        type of job
+        """
+        import os
+        import datetime,time
 
-    #    :return: List of jobs prepared
-    #    :rtype:  list(jobdescription)        
-    #    """
-    #    return self.joblist
+        class placeholder(object):
+            def __init__(this):
+                this.skipevents=None
+                this.nevents=None
+
+            def haveallvars(this):
+                if this.skipevents is None or this.nevents is None:
+                    return False
+                return True
+        
+        ph = placeholder()
+        for var,value in kw.iteritems():
+            setattr(ph,var,value)
+        
+        if not ph.haveallvars():
+            print ph.skipevents is None,(ph.nevents is None)
+            message = "Several variables needed were not setup"
+            raise RuntimeError(message)
+
+        ts = time.time()
+        timestamp = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+        bashfile = '#!/bin/bash\n\n'
+        bashfile += '# File created by the %s class [%s]\n\n' % (self.__class__.__name__,timestamp)
+        bashfile += '# ASSUMING job propagated environment variables. NO SETUP \n'
+        # Create a guard against malformed Workers (those which uses the same $HOME)
+        bashfile += 'tmpdir=`mktemp -d`\ncd $tmpdir;\n\n'
+        # Marlin job
+        bashfile += 'cp {0} .\n'.format(self.steering_file)
+        inputfiles_str = ''
+        for _f in self.inputfiles:
+            inputfiles_str += _f+" "
+        bashfile +='Marlin --global.MaxRecordNumber={0} --global.SkipNevents={1}'\
+                ' --global.GearXMLFile={2} --global.LCIOInputFiles="{3}" '\
+                '{4}\n'.format(ph.nevents,ph.skipevents,self.gear_file,\
+                inputfiles_str[:-1],self.steering_file)
+        bashfile +="\ncp *.root *.slcio {0}/\n".format(os.getcwd())
+        # remove the tmpdir
+        bashfile +="rm -rf $tmpdir\n"
+        f=open(self.scriptname,"w")
+        f.write(bashfile)
+        f.close()
+        os.chmod(self.scriptname,0755)
 
     @staticmethod
     def checkfinishedjob(jobdsc,logfilename):
-        """..method:: checkfinishedjob(jobdsc) -> status
-        
-        using the datamember 'successjobcode' perform a check
+        """Using the datamember 'successjobcode' perform a check
         to the job (jobdsc) to see if it is found the expected
         outputs or success codes
 
-        FIXME: Static class do not have make use of the self?
+        FIXME: TO BE UPDATEd
         """
-        #if self.isTFJ:
-        #    succesjobcode=['PyJobTransforms.main','trf exit code 0']
-        #else:
-        #    succesjobcode=['Py:Athena','INFO leaving with code 0: "successful run"']
-        succesjobcode_tf=['PyJobTransforms.main','trf exit code 0']
-        succesjobcode_jo=['Py:Athena','INFO leaving with code 0: "successful run"']
-        import os
-        # Athena jobs outputs inside folder defined as:
-        #folderout = os.path.join(jobdsc.path,'LSFJOB_'+str(jobdsc.ID))
-        # outfile
-        #logout = os.path.join(folderout,"STDOUT")
-        # -- defined as logfilename
-        logout = os.path.join(jobdsc.path,logfilename)
-        if not os.path.isfile(logout):
-            if DEBUG:
-                print "Not found the logout file '%s'" % logout
-            return 'fail'
+        #succesjobcode=''
+        #import os
+        ## -- defined as logfilename
+        #logout = os.path.join(jobdsc.path,logfilename)
+        #if not os.path.isfile(logout):
+        #    if DEBUG:
+        #        print "Not found the logout file '{0}'".format(logout)
+        #    return 'fail'
 
-        f = open(logout)
-        lines = f.readlines()
-        f.close()
-        # usually is in the end of the file
-        for i in reversed(lines):
-            if i.find(succesjobcode_jo[-1]) != -1:
-                return 'ok'
-            if i.find(succesjobcode_tf[-1]) != -1:
-                return 'ok'
-        return 'fail' 
+        #f = open(logout)
+        #lines = f.readlines()
+        #f.close()
+        ## usually is in the end of the file
+        #for i in reversed(lines):
+        #    if i.find(succesjobcode) != -1:
+        #        return 'ok'
+        #return 'fail' 
+        return 'ok'
 
     def sethowtocheckstatus(self):
         """TO BE DEPRECATED!!!
-        ..method:: sethowtocheckstatus()
         
-        An Athena job has succesfully finished if there is the line
-        'Py:Athena            INFO leaving with code 0: "successful run"'
+        NOT YET DEFINED 
         """
-        self.succesjobcode=['Py:Athena','INFO leaving with code 0: "successful run"']
-
-
+        self.succesjobcode=['']
 
 # Concrete workenv class for athena jobs
-workenv.register(athenajob)
+workenv.register(marlinjob)
