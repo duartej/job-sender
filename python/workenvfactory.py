@@ -83,8 +83,8 @@ class workenv(object):
         if type(isenvset) is tuple:
             message = "The environment is not ready for sending"
             message +=" an %s job. The environment" % self.typealias
-            message += " variable '%s' is not set." % isenvset[1]
-            message += " Do it with the '%s' command." % isenvset[2]
+            message += " variable '%s' is not set." % isenvset[2]
+            message += " Do it with the '%s' command." % isenvset[1]
             raise RuntimeError(message)
            
     def checkenvironment(self):
