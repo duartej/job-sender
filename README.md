@@ -1,5 +1,5 @@
-job-sender 
-==========
+# job-sender 
+------------
 Configuring and managing ATLAS, CMS, ILC and other particle physics
 software related cluster jobs. 
 This package has been separated from their original repository at 
@@ -15,8 +15,7 @@ classes]
 author: Jordi Duarte-Campderros (Nov.2014)
 email : jorge.duarte.campderros -at- cern
 
-INSTALLATION
-------------
+## INSTALLATION
 The package provides a (Distutils) 'setup.py' to build and install it. Just 
 ```bash
   % python setup.py install [--user] 
@@ -31,12 +30,20 @@ You have to modify the enviroment variables:
 ```
 in order to use the new scripts and modules.
 
-USAGE
------
+#### Dependencies
+
+This package requires the [xmltodict](https://github.com/martinblech/xmltodict) 
+package when used in `marlin` mode.
+Note you always can install the package not being the superuser of any 
+linux system using [pip](https://pip.pypa.io/en/stable) for instance:
+```bash
+pip install xmltodict --user
+```
+
+## USAGE
 TO BE FILLED
 
-CONTENT
--------
+## CONTENT
 TO BE FILLED
 
 Use *help* function for detailed information of each module and script.
