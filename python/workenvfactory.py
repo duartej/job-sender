@@ -782,7 +782,7 @@ class marlinjob(workenv):
         super(marlinjob,self).__init__(bashscriptname,**kw)
         
         try:
-            self.steering_file = getrealpaths(stf)[0]
+            self.steering_file = getrealpaths(steeringfile)[0]
         except IndexError:
             raise RuntimeError('Steering file not found {0}'.format(stf))
         
