@@ -785,7 +785,7 @@ class marlinjob(workenv):
         try:
             self.steering_file = getrealpaths(steeringfile)[0]
         except IndexError:
-            raise RuntimeError('Steering file not found {0}'.format(stf))
+            raise RuntimeError('Steering file not found {0}'.format(steeringfile))
         
         # Allowing EOS remote files
         if inputfiles.find('root://') == -1:
@@ -861,6 +861,8 @@ class marlinjob(workenv):
             key
         
         """
+        from xmltodict_jb import xmltodict 
+        
         # -- Number of events to process
         try:
             _index = filter(lambda (i,x): x['@name'] == the_field,enumerate(key_list))[0][0]
@@ -926,31 +928,32 @@ class marlinjob(workenv):
         
         return theprocdict
 
-    #def steering_file_modification(self):
-    #    """Substitute the steering files with the concrete values
-    #    """
-    #    XXX: NOT USE xmltodict, lxplus not available 
-    #         USE xml
-    #    import xmltodict
+    def steering_file_modification(self):
+        """Substitute the steering files with the concrete values
+        """
+        from xmltodict_jb import xmltodict 
+        import shutil
 
-    #    with open(self.steering_file) as f:
-    #        xml_steering = xmltodic.parse(f.read())
-    #    # The global parameters
-    #    par_list = xml_steering['marlin']['global']['parameter']
-    #    # -- Number of events to process
-    #    self._set_field_at(par_list,u'MaxRecordNumber',self.evtmax)
-    #    # -- Skip events
-    #    self._set_field_at(par_list,u'SkipNEvents',self.skipevts)
-    #    # -- Gear files
-    #    self._set_field_at(par_list,u'GearXMLFile',self.gear_file)
-    #    # -- input files
-    #    inputfiles_str = ''
-    #    for _f in self.inputfiles:
-    #        inputfiles_str += _f+" "
-    #    self._set_field_at(par_list,u'LCIOInputFiles',inputfiles_str[:-1])
-
-    #    with open(self.joboption,"w") as f:
-    #        f.writelines(lines)
+        with open(self.steering_file) as f:
+            xml_steering = xmltodict.parse(f.read())
+        # The global parameters
+        par_list = xml_steering['marlin']['global']['parameter']
+        # -- Number of events to process
+        self._set_field_at(par_list,u'MaxRecordNumber',self.evtmax)
+        # -- Skip events -- TO BE DEPRECATED
+        #self._set_field_at(par_list,u'SkipNEvents',self.skipevts)
+        # -- Gear files
+        self._set_field_at(par_list,u'GearXMLFile',self.gear_file)
+        # -- input files
+        inputfiles_str = ''
+        for _f in self.inputfiles:
+            inputfiles_str += _f+" "
+        self._set_field_at(par_list,u'LCIOInputFiles',inputfiles_str[:-1])
+        
+        # a backup copy?
+        shutil.copyfile(self.steering_file,self.steering_file[::-1].replace('.','.kcb_',1)[::-1])
+        with open(self.steering_file,"w") as f:
+            xmltodict.unparse(xml_steering,output=f,pretty=True)
 
 
     def preparejobs(self,extra_asetup=''):
@@ -965,7 +968,7 @@ class marlinjob(workenv):
 
         cwd=os.getcwd()
         # Create the copy of the steering file
-        # self.steering_file_modification()
+        self.steering_file_modification()
 
         jdlist = []
         for (i,(skipevts,nevents)) in enumerate(self.skipandperform):

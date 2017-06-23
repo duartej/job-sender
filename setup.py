@@ -9,7 +9,7 @@ setup(name='job-sender',
         url='https://github.com/duartej/job-sender',
         # See https://docs.python.org/2/distutils/setupscript.html#listing-whole-packages
         # for changes in the package distribution
-        package_dir={'job_sender':'python'},
-        packages = ['job_sender' ],
+        package_dir={'job_sender':'python', 'xmltodict_jb': 'xmltodict_jb'},
+        packages = ['job_sender','xmltodict_jb' ],
         scripts=['bin/clustermanager'],
         )
