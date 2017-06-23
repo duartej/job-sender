@@ -777,7 +777,8 @@ class marlinjob(workenv):
         gear_file: str, optional
             the gear file to use
         """
-        from jobssender import getrealpaths,getremotepaths,getevt
+        from jobssender import getrealpaths,getremotepaths
+        from jobssender import getevt_alibava as getevt
 
         super(marlinjob,self).__init__(bashscriptname,**kw)
         
@@ -801,9 +802,7 @@ class marlinjob(workenv):
             self.evtmax = int(kw['evtmax'])
         else:
             if not self.remotefiles:
-                # XXX Potential problem, how to obtain the number of events in
-                # a no-ROOT file?
-                self.evtmax = getevt(self.inputfiles,treename='CollectionTree')
+                self.evtmax = getevt(self.inputfiles)
 
         if kw.has_key('njobs'):
             self.njobs = int(kw['njobs'])
