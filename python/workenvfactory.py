@@ -1027,7 +1027,7 @@ class marlinjob(workenv):
         inputfiles_str = ''
         for _f in self.inputfiles:
             inputfiles_str += _f+" "
-        bashfile +='Marlin --global.MaxRecordNumber={0} --global.SkipNevents={1}'\
+        bashfile +='Marlin --global.MaxRecordNumber={0} --global.SkipNEvents={1}'\
                 ' --global.GearXMLFile={2} --global.LCIOInputFiles="{3}" '\
                 '{4}\n'.format(ph.nevents,ph.skipevents,self.gear_file,\
                 inputfiles_str[:-1],self.steering_file)
