@@ -810,9 +810,18 @@ class marlinjob(workenv):
             self.njobs= self.evtmax/JOBEVT
 
         if kw.has_key('gear_file'):
-            self.gear_file = kw['gear_file']
+            self.gear_file = getrealpaths(kw['gear_file'])[0]
         else:
-            self.gear_file = 'gear.xml'
+            self.gear_file = getrealpaths('gear.xml')[0]
+
+        if kw.has_key('is_alibava_conversion'):
+            self.is_alibava_conversion = bool(kw['is_alibava_conversion'])
+        else:
+            self.is_alibava_convesion = False
+
+        # if alibava conversion allow only one job
+        if self.is_alibava_conversion:
+            self.njobs = 1
         
         # Get the evtperjob
         evtsperjob = self.evtmax/self.njobs
@@ -845,7 +854,7 @@ class marlinjob(workenv):
         # And re-point
         self.steering_file=localcopy
 
-    def _set_field_at(self,key_list,the_field,the_value):
+    def _set_field_at(self,key_list,the_field,the_value,text_wanted=False):
         """Helper function (could be deattached from the class)
         to update a field in a xmltodict dictionary, parsed
         from a Marlin xml steering file.
@@ -875,7 +884,16 @@ class marlinjob(workenv):
             key_list[_index].pop('#text')
         except KeyError:
             pass
-        key_list[_index]['@value'] = u'{0}'.format(the_value)
+        if text_wanted:
+            # Using only the #text field, remove the value if any
+            try:
+                key_list[_index].pop('@value')
+            except KeyError:
+                pass
+            key_list[_index]['#text'] = u'{0}'.format(the_value)
+        else:
+            key_list[_index]['@value'] = u'{0}'.format(the_value)
+
 
     def _get_active_processor(self,thexmldict,processor_type,processor_name=None):
         """Given a processor type (and optionaly a processor name), found and
@@ -901,12 +919,12 @@ class marlinjob(workenv):
         i = 0
         for pr in  filter(lambda x: x[u'@type'] == processor_type,\
                 thexmldict['marlin']['processor']):
-            if processor_name == "":
+            if processor_name == "" or processor_name == None:
                 # take the first one and get the instance name from it
                 theprocdict=pr
                 processor_name = theprocdict[u'@name']
                 break
-            elif processor_name != "" and pr[u'@name'] == processor_name:
+            elif pr[u'@name'] == processor_name:
                 # found it
                 theprocdict = pr
                 break
@@ -914,41 +932,60 @@ class marlinjob(workenv):
         # Error codes
         if not theprocdict:
             if i == 0:
-                raise RuntimeError('Processor "{0}" not found in the "\
-                        "template steering file (or invalid Marlin"\
-                        " steering file)'.format(processor_type))
+                raise RuntimeError('Processor "{0}" not found in the '\
+                        'template steering file (or invalid Marlin'\
+                        ' steering file)'.format(processor_type))
             elif i != 0 and processor_name != "":
                 if theprocdict[u'@name'] != processor_name:
-                    raise RuntimeError('Processor name "{0}" does not corresponds to"\
-                        " any processor in the steering file'.format(processor_name))
+                    raise RuntimeError('Processor name "{0}" does not corresponds to'\
+                        ' any processor in the steering file'.format(processor_name))
         # Check that it is activated 
         if len(filter(lambda x: x['@name'] == processor_name,\
-                thxmldict['marlin']['execute']['processor'])) == 0:
+                thexmldict['marlin']['execute']['processor'])) == 0:
             raise RuntimeError('Processor "{0}" not activated!'.format(processor_name))
         
         return theprocdict
 
     def steering_file_modification(self):
         """Substitute the steering files with the concrete values
+        
+        Note
+        ----
+        if is_alibava_conversion is activated, then specific actions
+        must be taken into account, as just send 1 job, and re-interpret 
+        the input file as the file for the converter
         """
         from xmltodict_jb import xmltodict 
         import shutil
 
         with open(self.steering_file) as f:
             xml_steering = xmltodict.parse(f.read())
-        # The global parameters
+        # The global parameters: Just be sure they are in the steering
+        # file in order to be updated with the command line afterwards
         par_list = xml_steering['marlin']['global']['parameter']
         # -- Number of events to process
         self._set_field_at(par_list,u'MaxRecordNumber',self.evtmax)
-        # -- Skip events -- TO BE DEPRECATED
-        #self._set_field_at(par_list,u'SkipNEvents',self.skipevts)
+        # -- Skip events -- 
+        self._set_field_at(par_list,u'SkipNEvents',0)
         # -- Gear files
         self._set_field_at(par_list,u'GearXMLFile',self.gear_file)
         # -- input files
         inputfiles_str = ''
         for _f in self.inputfiles:
             inputfiles_str += _f+" "
-        self._set_field_at(par_list,u'LCIOInputFiles',inputfiles_str[:-1])
+        self._set_field_at(par_list,u'LCIOInputFiles',inputfiles_str[:-1],text_wanted=True)
+
+        # Some particularities for the ALIBAVA raw converter jobs
+        if self.is_alibava_conversion:
+            # -- remove the global inputFiles
+            self._set_field_at(par_list,u'LCIOInputFiles',"",text_wanted=True)
+            # -- the inputfile is sended to the AlibavaConverter processor
+            converter = self._get_active_processor(xml_steering,"AlibavaConverter")
+            par_list_converter = converter['parameter']
+            self._set_field_at(par_list_converter,u'InputFileName',inputfiles_str[:-1],text_wanted=True)
+            # -- Remove the MaxRecordNumber
+            self._set_field_at(par_list,u'MaxRecordNumber',"",text_wanted=True)
+        
         
         # a backup copy?
         shutil.copyfile(self.steering_file,self.steering_file[::-1].replace('.','.kcb_',1)[::-1])
@@ -956,17 +993,24 @@ class marlinjob(workenv):
             xmltodict.unparse(xml_steering,output=f,pretty=True)
 
 
-    def preparejobs(self,extra_asetup=''):
+    def preparejobs(self,asetup_extra=""):
         """Main function which builds the folder structure
         and the needed files of the job, in order to be
         sent to the cluster
         A folder is created following the notation:
           * JOB_self.jobname_jobdsc.index
+
+        Note
+        ----
+        if is_alibava_conversion is activated, then specific actions
+        must be taken into account, as just send 1 job, and re-interpret 
+        the input file as the file for the converter
         """
         import os
         from jobssender import jobdescription
 
         cwd=os.getcwd()
+        # Modify a few
         # Create the copy of the steering file
         self.steering_file_modification()
 
@@ -1027,10 +1071,19 @@ class marlinjob(workenv):
         inputfiles_str = ''
         for _f in self.inputfiles:
             inputfiles_str += _f+" "
-        bashfile +='Marlin --global.MaxRecordNumber={0} --global.SkipNEvents={1}'\
-                ' --global.GearXMLFile={2} --global.LCIOInputFiles="{3}" '\
-                '{4}\n'.format(ph.nevents,ph.skipevents,self.gear_file,\
-                inputfiles_str[:-1],self.steering_file)
+        # Not including some of the options when dealing with 
+        # alibava conversion jobs
+        if self.is_alibava_conversion:
+            maxrecordnumber_cmmd=""
+            skipevents_cmmd     = ""
+            inputfiles_cmmd      = ""
+        else:
+            maxrecordnumber_cmmd= "--global.MaxRecordNumber={0}".format(ph.nevents)
+            skipevents_cmmd     = "--global.SkipNEvents={0}".format(ph.skipevents)
+            inputfiles_cmmd     = "--global.LCIOInputFiles=\"{0}\"".format(inputfiles_str[:-1])
+
+        bashfile +='Marlin --global.GearXMLFile={2} {0} {1} {3} {4}\n'.format(maxrecordnumber_cmmd,\
+                skipevents_cmmd,self.gear_file,inputfiles_cmmd,self.steering_file)
         bashfile +="\ncp *.root *.slcio {0}/\n".format(os.getcwd())
         # remove the tmpdir
         bashfile +="rm -rf $tmpdir\n"

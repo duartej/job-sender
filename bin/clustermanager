@@ -36,6 +36,10 @@ if __name__ == '__main__':
     sendopt.add_option("--specific-file",action="store",dest="optionalfile",\
             help="Extra file for the blind job, specific related to the job-index."\
             " The actual format should be like 'filename_%i.suff'")
+    sendopt.add_option("--gear-file",action="store",dest="gearfile",\
+            help="Gear file to be used in the `marlin` mode [Default:gear.xml]")
+    sendopt.add_option("--alibava-conversion",action="store_true",dest="is_alibava_conversion",\
+            help="Activate this flag when the job is a `marlin` ALIBAVA raw data conversion")
     sendopt.add_option("-j","--jobOption",action="store",dest="joboption",\
             help="Name of the python jobOption file or the marlin steering file")
     sendopt.add_option("--extra-asetup",action="store",dest="asetup_options",\
@@ -115,7 +119,11 @@ if __name__ == '__main__':
                     evtmax=opt.evtsmax)
         elif opt.type_we == 'marlin':
             we_instance = marlinjob(opt.bashname,opt.joboption,opt.filenames,
-                    njobs=opt.njobs,evtmax=opt.evtsmax)
+                    njobs=opt.njobs,evtmax=opt.evtsmax,gear_file=opt.gearfile,
+                    is_alibava_conversion=opt.is_alibava_conversion)
+            # Re-use the asetup_options as alibava_conversion flag, to be understood
+            # by the concrete marlinjobs.preparejobs
+            opt.asetup_options=opt.is_alibava_conversion
         else:
             raise AttributeError('-t option variable not recognized: "{0}"'.format(opt.type_we))
         cluster = cluster_builder(simulate=opt.dryrun,queue=opt.queue,extra_opts=opt.extra_opts)
