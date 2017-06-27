@@ -952,6 +952,7 @@ class marlinjob(workenv):
         """
         from xmltodict_jb import xmltodict 
         import shutil
+        import os
 
         with open(self.steering_file) as f:
             xml_steering = xmltodict.parse(f.read())
@@ -969,6 +970,14 @@ class marlinjob(workenv):
         for _f in self.inputfiles:
             inputfiles_str += _f+" "
         self._set_field_at(par_list,u'LCIOInputFiles',inputfiles_str[:-1],text_wanted=True)
+        # Output files
+        # -- Convention: same input file name with the name of the process (self.jobname)
+        #    and the job number (see createbashscript)
+        outputcreator = self._get_active_processor(xml_steering,"LCIOOutputProcessor")
+        self.outputcreator_name = outputcreator['@name']
+        par_list_outcreator = outputcreator['parameter']
+        self.outputfile_name = os.path.basename(self.inputfiles[0]).replace(".","_"+self.jobname+".")
+        self._set_field_at(par_list_outcreator,u'LCIOOutputFile',self.outputfile_name,text_wanted=True)        
 
         # Some particularities for the ALIBAVA raw converter jobs
         if self.is_alibava_conversion:
@@ -980,7 +989,12 @@ class marlinjob(workenv):
             self._set_field_at(par_list_converter,u'InputFileName',inputfiles_str[:-1],text_wanted=True)
             # -- Remove the MaxRecordNumber
             self._set_field_at(par_list,u'MaxRecordNumber',"",text_wanted=True)
-        
+            # -- Force the output to be exactly the same name than the input file,
+            #    just substituting the suffix per slcio
+            outputcreator = self._get_active_processor(xml_steering,"LCIOOutputProcessor")
+            par_list_outcreator = outputcreator['parameter']
+            self._set_field_at(par_list_outcreator,u'LCIOOutputFile',\
+                    os.path.basename(self.inputfiles[0]).replace(".dat",".slcio"),text_wanted=True)
         
         # a backup copy?
         shutil.copyfile(self.steering_file,self.steering_file[::-1].replace('.','.kcb_',1)[::-1])
@@ -1009,7 +1023,7 @@ class marlinjob(workenv):
             os.mkdir(foldername)
             os.chdir(foldername)
             # create the local bashscript
-            self.createbashscript(skipevents=skipevts,nevents=nevents)
+            self.createbashscript(skipevents=skipevts,nevents=nevents,iteration=i)
             # Registring the jobs in jobdescription class instances
             jdlist.append( 
                     jobdescription(path=foldername,script=self.jobname,index=i)
@@ -1024,6 +1038,12 @@ class marlinjob(workenv):
     def createbashscript(self,**kw):
         """Creates the specific bashscript(s). Depend on the 
         type of job
+
+        Parameters
+        ----------
+        skipevents: int
+        nevents:    int
+        iteration:  int
         """
         import os
         import datetime,time
@@ -1032,9 +1052,11 @@ class marlinjob(workenv):
             def __init__(this):
                 this.skipevents=None
                 this.nevents=None
+                this.iterations=None
 
             def haveallvars(this):
-                if this.skipevents is None or this.nevents is None:
+                if this.skipevents is None or this.nevents is None \
+                        or this.iteration is None:
                     return False
                 return True
         
@@ -1043,7 +1065,6 @@ class marlinjob(workenv):
             setattr(ph,var,value)
         
         if not ph.haveallvars():
-            print ph.skipevents is None,(ph.nevents is None)
             message = "Several variables needed were not setup"
             raise RuntimeError(message)
 
@@ -1064,14 +1085,17 @@ class marlinjob(workenv):
         if self.is_alibava_conversion:
             maxrecordnumber_cmmd=""
             skipevents_cmmd     = ""
-            inputfiles_cmmd      = ""
+            inputfiles_cmmd     = ""
+            outputfile_cmmd     = ""
         else:
             maxrecordnumber_cmmd= "--global.MaxRecordNumber={0}".format(ph.nevents)
             skipevents_cmmd     = "--global.SkipNEvents={0}".format(ph.skipevents)
             inputfiles_cmmd     = "--global.LCIOInputFiles=\"{0}\"".format(inputfiles_str[:-1])
+            outputfile_cmmd     = "--{0}.LCIOOutputFile={1}".format(self.outputcreator_name,\
+                    self.outputfile_name.replace('.','_{0}.'.format(ph.iteration)))
 
-        bashfile +='Marlin --global.GearXMLFile={2} {0} {1} {3} {4}\n'.format(maxrecordnumber_cmmd,\
-                skipevents_cmmd,self.gear_file,inputfiles_cmmd,self.steering_file)
+        bashfile +='Marlin --global.GearXMLFile={2} {0} {1} {3} {4} {5}\n'.format(maxrecordnumber_cmmd,\
+                skipevents_cmmd,self.gear_file,inputfiles_cmmd,outputfile_cmmd,self.steering_file)
         bashfile +="\ncp *.root *.slcio {0}/\n".format(os.getcwd())
         # remove the tmpdir
         bashfile +="rm -rf $tmpdir\n"
