@@ -782,7 +782,8 @@ class marlinjob(workenv):
             particular actions are needed
         """
         from jobssender import getrealpaths,getremotepaths
-        from jobssender import getevt_alibava as getevt
+        from jobssender import getevt_alibava 
+        from jobssender import getevt_lcio    
 
         super(marlinjob,self).__init__(bashscriptname,**kw)
         
@@ -804,9 +805,11 @@ class marlinjob(workenv):
         
         if kw.has_key('evtmax') and int(kw['evtmax']) != -1:
             self.evtmax = int(kw['evtmax'])
-        else:
-            if not self.remotefiles:
-                self.evtmax = getevt(self.inputfiles)
+        elif (not self.remotefiles):
+            if inputfiles.find('.slcio') != -1:
+                self.evtmax = getevt_lcio(self.inputfiles)
+            else:
+                self.evtmax = getevt_alibava(self.inputfiles)
 
         if kw.has_key('njobs'):
             self.njobs = int(kw['njobs'])
@@ -821,7 +824,7 @@ class marlinjob(workenv):
         if kw.has_key('is_alibava_conversion'):
             self.is_alibava_conversion = bool(kw['is_alibava_conversion'])
         else:
-            self.is_alibava_convesion = False
+            self.is_alibava_conversion = False
 
         # if alibava conversion allow only one job
         if self.is_alibava_conversion:

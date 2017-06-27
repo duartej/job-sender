@@ -135,7 +135,10 @@ def store_evts_metadata(md,prefix):
     
     kk = shelve.open(os.path.join(prefix,'.events_per_file'))
     kk['evt_file_dict'] = md
-    kk.close()        
+    kk.close()
+
+# FIXME: A function to check if the metadata exits, common
+# to all the getevt family of functions
 
 def getevt(filelist,**kw):
     """ ..function:: getevt(filelist[,treename]) -> totalevts
@@ -250,6 +253,65 @@ def getevt_alibava(filelist,force=False):
     events = 0
     for f in filelist:
         command = 'genfa {0}'.format(f)
+        p = Popen(command,stdout=PIPE,stderr=PIPE,shell=True).communicate()
+        # Not error control FIXME
+        md[f] = int(p[0].split()[-1])
+        events += md[f]
+    # store metadata
+    store_evts_metadata(md,prefixpath)
+    
+    return events
+
+def getevt_lcio(filelist,force=False):
+    """Getting the number of events contained in a list
+    of LCIO files. Assumes the LCIO package installed 
+    and setting up
+    
+    Parameters
+    ----------
+    filelist: list(str)
+        the files to look into
+    force: bool
+        whether re-evaluate the number of events even if
+        the .events_per_file is present
+
+    Return
+    ------
+    int, number of events contained in the LCIO files
+    """
+    from subprocess import Popen,PIPE
+    import os
+
+    # First check if there is exist the file in the folder
+    # in order to avoid the loading. Let's assume that file contain 
+    # the full path
+    prefixpath = os.path.dirname(filelist[0])
+    md = get_evts_metadata(prefixpath)
+    if force:
+        md = 0
+    if len(md) > 0:
+        nevts = 0
+        print "\033[1;34mINFO\033[1;m Extracting events per file using"\
+                " the '.events_per_file'. Note you can remove the file to force a"\
+                " recalculation"
+        # XXX: Also we can do sum(md.values()), but the files are not checked
+        #      then... 
+        for f in filelist:
+            try: 
+                nevts += md[f]
+            except KeyError:
+                print "\033[1;33mWARNING\033[1;m Metafile '.events_per_file'"\
+                        " seems to be malformed, did not find '{0}'. "\
+                        "Probably '.events_per_file' should be recreated'".format(f)
+        if nevts == 0:
+            raise RuntimeError("No event was extracted from '.events_per_file'")
+        return nevts
+    # NOT FOUND THE METADATA, let's evaluate it, and stores a metadata file
+    if DEBUG:
+        print "Loading the LCIO files to obtain the N_{evts}"
+    events = 0
+    for f in filelist:
+        command = 'lcio_event_counter {0}'.format(f)
         p = Popen(command,stdout=PIPE,stderr=PIPE,shell=True).communicate()
         # Not error control FIXME
         md[f] = int(p[0].split()[-1])
