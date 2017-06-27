@@ -980,8 +980,18 @@ class marlinjob(workenv):
         self.outputcreator_name = outputcreator['@name']
         par_list_outcreator = outputcreator['parameter']
         self.outputfile_name = os.path.basename(self.inputfiles[0]).replace(".","_"+self.jobname+".")
-        self._set_field_at(par_list_outcreator,u'LCIOOutputFile',self.outputfile_name,text_wanted=True)        
-
+        self._set_field_at(par_list_outcreator,u'LCIOOutputFile',self.outputfile_name,text_wanted=True)
+        self._set_field_at(par_list_outcreator,u'LCIOWriteMode',"WRITE_NEW",text_wanted=True)
+        # -- AIDA processor if any
+        try:
+            aidaprocessor = self._get_active_processor(xml_steering,"AIDAProcessor")
+            par_list_aida = aidaprocessor['parameter']
+            rootfilename = ".".join(self.outputfile_name.split(".")[:-1])+".root"
+            self._set_field_at(par_list_aida,u'FileName',rootfilename,text_wanted=True)
+            self._set_field_at(par_list_outcreator,u'FileType',"root",text_wanted=True)
+        except RuntimeError:
+            # Not present, ignoring
+            pass
         # Some particularities for the ALIBAVA raw converter jobs
         if self.is_alibava_conversion:
             # -- remove the global inputFiles

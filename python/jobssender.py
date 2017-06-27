@@ -241,12 +241,16 @@ def getevt_alibava(filelist,force=False):
             try: 
                 nevts += md[f]
             except KeyError:
+                # FIXME: Change this, if there are several files in the same folder
+                #        the behaviour is fine, just calculate the number
                 print "\033[1;33mWARNING\033[1;m Metafile '.events_per_file'"\
                         " seems to be malformed, did not find '{0}'. "\
                         "Probably '.events_per_file' should be recreated'".format(f)
-        if nevts == 0:
-            raise RuntimeError("No event was extracted from '.events_per_file'")
-        return nevts
+        #if nevts == 0:
+        #    raise RuntimeError("No event was extracted from '.events_per_file'")
+        # return nevts
+        if nevts != 0:
+            return nevts
     # NOT FOUND THE METADATA, let's evaluate it, and stores a metadata file
     if DEBUG:
         print "Loading the alibava files to obtain the N_{evts}"
