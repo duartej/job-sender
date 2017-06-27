@@ -776,6 +776,10 @@ class marlinjob(workenv):
             number of jobs to be sent
         gear_file: str, optional
             the gear file to use
+        is_alibava_conversion: bool, optional
+            whether or not the jobs to be send are the conversion
+            from raw alibava data to LCIO, in that case, some 
+            particular actions are needed
         """
         from jobssender import getrealpaths,getremotepaths
         from jobssender import getevt_alibava as getevt
@@ -825,34 +829,23 @@ class marlinjob(workenv):
         
         # Get the evtperjob
         evtsperjob = self.evtmax/self.njobs
-        # First event:0 last: n-1
-        remainevts = (self.evtmax % self.njobs)-1
+        # First event:0 last: n (remember run+event)
+        remainevts = (self.evtmax % self.njobs)+1
         
         self.skipandperform = []
         # Build a list of tuples containing the events to be skipped
         # followed by the number of events to be processed
-        for i in xrange(self.njobs-1):
-            self.skipandperform.append( (i*evtsperjob,evtsperjob) )
-        # And the remaining
-        self.skipandperform.append( ((self.njobs-1)*evtsperjob,remainevts) )
+        for i in xrange(self.njobs):
+            self.skipandperform.append( [i*evtsperjob,evtsperjob] )
+        # And the remaining, to be added to the last  
+        self.skipandperform[-1][1] = self.skipandperform[-1][1]+remainevts
+        print self.skipandperform
 
     def __setneedenv__(self):
         """Relevant environment in an Marlin job: MARLIN
         """
         self.typealias = 'Marlin'
         self.relevantvar =  [ ("MARLIN","source") ] 
-
-    def use_steering_file(self):
-        """The steering file is copied in the local path
-        """
-        import shutil
-        import os
-        
-        localcopy=os.path.join(os.getcwd(),os.path.basename(self.joboption))
-        if localcopy != self.steering_file:
-            shutil.copyfile(self.steering_file,localcopy)
-        # And re-point
-        self.steering_file=localcopy
 
     def _set_field_at(self,key_list,the_field,the_value,text_wanted=False):
         """Helper function (could be deattached from the class)
@@ -868,7 +861,9 @@ class marlinjob(workenv):
         the_value: any type
             the value (converted to str) which is set to the `@value`
             key
-        
+        text_wanted: bool
+            if activated, the used value is the '#text' field, i.e. 
+            the one between <whatever>TEXT</whatever> 
         """
         from xmltodict_jb import xmltodict 
         
@@ -999,19 +994,12 @@ class marlinjob(workenv):
         sent to the cluster
         A folder is created following the notation:
           * JOB_self.jobname_jobdsc.index
-
-        Note
-        ----
-        if is_alibava_conversion is activated, then specific actions
-        must be taken into account, as just send 1 job, and re-interpret 
-        the input file as the file for the converter
         """
         import os
         from jobssender import jobdescription
 
         cwd=os.getcwd()
-        # Modify a few
-        # Create the copy of the steering file
+        # Create the copy of the steering file with some modifications
         self.steering_file_modification()
 
         jdlist = []
