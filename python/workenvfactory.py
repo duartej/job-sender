@@ -1001,7 +1001,7 @@ class marlinjob(workenv):
         try:
             aidaprocessor = self._get_active_processor(xml_steering,"AIDAProcessor")
             par_list_aida = aidaprocessor['parameter']
-            rootfilename = ".".join(self.outputfile_name.split(".")[:-1])
+            rootfilename = ".".join(self.outputfile_name.split(".")[:-1])+"_aida"
             self._set_field_at(par_list_aida,u'FileName',rootfilename,text_wanted=True)
             self._set_field_at(par_list_aida,u'FileType',"root",text_wanted=True)
         except RuntimeError:
