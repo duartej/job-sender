@@ -976,19 +976,34 @@ class marlinjob(workenv):
         # Output files
         # -- Convention: same input file name with the name of the process (self.jobname)
         #    and the job number (see createbashscript)
-        outputcreator = self._get_active_processor(xml_steering,"LCIOOutputProcessor")
-        self.outputcreator_name = outputcreator['@name']
-        par_list_outcreator = outputcreator['parameter']
-        self.outputfile_name = os.path.basename(self.inputfiles[0]).replace(".","_"+self.jobname+".")
-        self._set_field_at(par_list_outcreator,u'LCIOOutputFile',self.outputfile_name,text_wanted=True)
-        self._set_field_at(par_list_outcreator,u'LCIOWriteMode',"WRITE_NEW",text_wanted=True)
+        try:
+            # Note the alibava pedestal and calibrate creator job manages their own file
+            outputcreator = self._get_active_processor(xml_steering,"LCIOOutputProcessor")
+            self.outputcreator_name = outputcreator['@name']
+            par_list_outcreator = outputcreator['parameter']
+            self.outputfile_name = os.path.basename(self.inputfiles[0]).replace(".","_"+self.jobname+".")
+            self._set_field_at(par_list_outcreator,u'LCIOOutputFile',self.outputfile_name,text_wanted=True)
+            self._set_field_at(par_list_outcreator,u'LCIOWriteMode',"WRITE_NEW",text_wanted=True)
+        except RuntimeError:
+            # Note the alibava pedestal creator job manages their own file
+            try:
+                sp_proc = self._get_active_processor(xml_steering,"AlibavaPedestalNoiseProcessor")
+            except RuntimeError:
+                sp_proc = self._get_active_processor(xml_steering,"AlibavaCalibrateProcessor")
+            par_list_proc = sp_proc['parameter']
+            # Extract if is common-mode extracted or not, by looking at the collection names suffix
+            suffix = filter(lambda x: x[u'@name'] == 'PedestalCollectionName', \
+                    par_list_proc)[0]['@value'].split("_")[-1]
+            self.outputfile_name = os.path.basename(self.inputfiles[0]).replace(".","_"+self.jobname+"_"+suffix+".")
+            self._set_field_at(par_list_proc,u'PedestalOutputFile',self.outputfile_name,text_wanted=True)
+
         # -- AIDA processor if any
         try:
             aidaprocessor = self._get_active_processor(xml_steering,"AIDAProcessor")
             par_list_aida = aidaprocessor['parameter']
-            rootfilename = ".".join(self.outputfile_name.split(".")[:-1])+".root"
+            rootfilename = ".".join(self.outputfile_name.split(".")[:-1])
             self._set_field_at(par_list_aida,u'FileName',rootfilename,text_wanted=True)
-            self._set_field_at(par_list_outcreator,u'FileType',"root",text_wanted=True)
+            self._set_field_at(par_list_aida,u'FileType',"root",text_wanted=True)
         except RuntimeError:
             # Not present, ignoring
             pass
@@ -1104,9 +1119,12 @@ class marlinjob(workenv):
             maxrecordnumber_cmmd= "--global.MaxRecordNumber={0}".format(ph.nevents)
             skipevents_cmmd     = "--global.SkipNEvents={0}".format(ph.skipevents)
             inputfiles_cmmd     = "--global.LCIOInputFiles=\"{0}\"".format(inputfiles_str[:-1])
-            outputfile_cmmd     = "--{0}.LCIOOutputFile={1}".format(self.outputcreator_name,\
-                    self.outputfile_name.replace('.','_{0}.'.format(ph.iteration)))
-
+            try:
+                outputfile_cmmd     = "--{0}.LCIOOutputFile={1}".format(self.outputcreator_name,\
+                        self.outputfile_name.replace('.','_{0}.'.format(ph.iteration)))
+            except AttributeError:
+                # Pedestal or calibration, not present then
+                outputfile_cmmd = ""
         bashfile +='Marlin --global.GearXMLFile={2} {0} {1} {3} {4} {5}\n'.format(maxrecordnumber_cmmd,\
                 skipevents_cmmd,self.gear_file,inputfiles_cmmd,outputfile_cmmd,self.steering_file)
         bashfile +="\ncp *.root *.slcio {0}/\n".format(os.getcwd())
