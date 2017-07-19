@@ -806,6 +806,8 @@ class marlinjob(workenv):
         if kw.has_key('evtmax') and int(kw['evtmax']) != -1:
             self.evtmax = int(kw['evtmax'])
         elif (not self.remotefiles):
+            # Remember the number of processed events is Nevents-1 (which
+            # Corresponds to the run number 1
             if inputfiles.find('.slcio') != -1:
                 self.evtmax = getevt_lcio(self.inputfiles)
             else:
@@ -830,10 +832,14 @@ class marlinjob(workenv):
         if self.is_alibava_conversion:
             self.njobs = 1
         
-        # Get the evtperjob
-        evtsperjob = self.evtmax/self.njobs
-        # First event:0 last: n (remember run+event)
-        remainevts = (self.evtmax % self.njobs)+1
+        # Get the evtperjob:
+        # REMEMBER: number of events to be processed in Marlin (N) is
+        # N= number_events+run, assuming run=1 --> number_events-1 is 
+        # the real number of events processed per job
+        evtsperjob = self.evtmax/self.njobs+1
+        # First event:0 last: n (remember run+event), subtracted the number
+        # of jobs to correct the overpopulation with the +1 added in evtsperjob
+        remainevts = (self.evtmax % self.njobs)-self.njobs
         
         self.skipandperform = []
         # Build a list of tuples containing the events to be skipped
