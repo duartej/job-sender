@@ -867,6 +867,8 @@ class marlinjob(workenv):
         text_wanted: bool
             if activated, the used value is the '#text' field, i.e. 
             the one between <whatever>TEXT</whatever> 
+
+        TO BE DEPRECATED
         """
         from xmltodict_jb import xmltodict 
         
@@ -952,6 +954,8 @@ class marlinjob(workenv):
         if is_alibava_conversion is activated, then specific actions
         must be taken into account, as just send 1 job, and re-interpret 
         the input file as the file for the converter
+
+        TO BE DEPRECATED
         """
         from xmltodict_jb import xmltodict 
         import shutil
@@ -1042,7 +1046,12 @@ class marlinjob(workenv):
 
         cwd=os.getcwd()
         # Create the copy of the steering file with some modifications
-        self.steering_file_modification()
+        # FIXME: Is this really needed?? Actually just changing the 
+        #        relevant parameters by command line (as it is already
+        #        done) would be enough
+        # XXX: NOT CREATED... This will allow to remove the dependency
+        #      with xmldict
+        #self.steering_file_modification()
 
         jdlist = []
         for (i,(skipevts,nevents)) in enumerate(self.skipandperform):
