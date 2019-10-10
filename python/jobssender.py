@@ -452,12 +452,14 @@ class job(object):
         wrapper to the clusterspec method
         """
         import time
+        from job_sender.clusterfactory import taucluster
 
         for jb in self.tasklist:
             self.cluster.submit(jb)
             # wait 2 seconds, before submit the next one
-            # FIXME: JUST do that for the taucluster
-            time.sleep(2)
+            # JUST do that for the taucluster
+            if isinstance(self.cluster,taucluster):
+                time.sleep(2)
     
     def resubmit(self,joblist):
         """..method ::resubmit(joblist) 

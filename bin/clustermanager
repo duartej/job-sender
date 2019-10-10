@@ -10,7 +10,7 @@
 
 DEBUG=True
 JOBEVT=500
-from job_sender.workenvfactory import athenajob,blindjob,marlinjob
+from job_sender.workenvfactory import athenajob,blindjob,marlinjob,cmsjob
 from job_sender.clusterfactory import cluster_builder
 from job_sender.jobssender     import bookeepingjobs,accessingjobsinfo,job
 
@@ -32,7 +32,7 @@ if __name__ == '__main__':
     sendopt= OptionGroup(parser,"Send mode options",
             "Options valid only when it is called with 'send' arg")
     sendopt.add_option("-t","--type",action="store",dest="type_we",\
-            default='athena',help="Name of the type of job: <athena|reco_tf|blind|marlin> [athena]")
+            default='athena',help="Name of the type of job: <cms|athena|reco_tf|blind|marlin> [athena]")
     sendopt.add_option("--specific-file",action="store",dest="optionalfile",\
             help="Extra file for the blind job, specific related to the job-index."\
             " The actual format should be like 'filename_%i.suff'")
@@ -55,6 +55,8 @@ if __name__ == '__main__':
             help="Force the number of jobs to be sent [10]")
     sendopt.add_option("-e","--evtsmax",action="store",dest="evtsmax",\
             help="Number of events to be processed")
+    sendopt.add_option("--is-gensim",action="store_true",dest="is_gensim",\
+            help="Activate the flag if is a CMSSW generation/simulation job")
     parser.add_option_group(sendopt)
 
     #retropt= OptionGroup(parser,"Retrieve mode options",
@@ -124,6 +126,10 @@ if __name__ == '__main__':
             # Re-use the asetup_options as alibava_conversion flag, to be understood
             # by the concrete marlinjobs.preparejobs
             opt.asetup_options=opt.is_alibava_conversion
+        elif opt.type_we == 'cms':
+            we_instance = cmsjob(opt.bashname,opt.joboption,inputfiles=opt.filenames,
+                    njobs=opt.njobs,
+                    evtmax=opt.evtsmax,is_gensim=opt.is_gensim)
         else:
             raise AttributeError('-t option variable not recognized: "{0}"'.format(opt.type_we))
         cluster = cluster_builder(simulate=opt.dryrun,queue=opt.queue,extra_opts=opt.extra_opts)

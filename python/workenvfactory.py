@@ -418,7 +418,7 @@ class athenajob(workenv):
             self.evtmax = int(kw['evtmax'])
         else:
             if not self.remotefiles:
-                self.evtmax = getevt(self.inputfiles,treename='CollectionTree')
+                self.evtmax = getevt(self.inputfiles,treename='Events')
 
         if kw.has_key('njobs'):
             self.njobs = int(kw['njobs'])
@@ -744,6 +744,325 @@ class athenajob(workenv):
 # Concrete workenv class for athena jobs
 workenv.register(athenajob)
 
+## -- Concrete implementation: cmsRun job
+class cmsjob(workenv):
+    """Concrete implementation of an CMS jobs 
+    An cms job should contain:
+      * a bashscript name, which defines the cmsRun job
+      * a python configuration for cmsRun
+    
+    See __init__ method to instatiate the class
+    """
+    def __init__(self,sh_name,py_cfg,inputfiles,**kw):
+        """Instantiation
+
+        Parameters
+        ----------
+        sh_name: str
+            name of the bash script argument. Note that must be without suffix
+        py_cfg: str
+            path to the cmsRun configuration python script 
+        inputfiles: str
+            comma separated root inputfiles, wildcards are allowed
+
+        evtmax: int, optional
+            number of events to be processed
+        njobs: int, optional
+            number of jobs to be sent
+        """
+        from jobssender import getrealpaths,getremotepaths,getevt
+
+        super(cmsjob,self).__init__(sh_name,**kw)
+        try:
+            self.py_cfg=getrealpaths(py_cfg)[0]
+        except IndexError:
+            raise RuntimeError('Configuration python file not found "{0}"'.format(py_cfg))
+        except TypeError:
+            raise RuntimeError('Configuration python file not found "{0}"'.format(py_cfg))
+        
+        # Allowing EOS remote files
+        if inputfiles.find('root://') == -1:
+            self.remotefiles=False
+            self.inputfiles=getrealpaths(inputfiles)
+        else:
+            self.remotefiles=True
+            self.inputfiles,self.evtmax = getremotepaths(inputfiles)
+
+        if len(self.inputfiles) == 0:
+            raise RuntimeError('Not found the cmsRun inputfiles: %s' \
+                    % inputfiles)
+
+        if kw.has_key('is_gensim'):
+            self.is_gensim = kw['is_gensim']
+        else:
+            self.is_gensim = False
+        
+        if kw.has_key('evtmax') and int(kw['evtmax']) != -1:
+            self.evtmax = int(kw['evtmax'])
+        else:
+            if not self.remotefiles:
+                self.evtmax = getevt(self.inputfiles,treename='Events')
+        
+        if kw.has_key('njobs'):
+            self.njobs = int(kw['njobs'])
+        else:
+            self.njobs= self.evtmax/JOBEVT
+
+        # Get the evtperjob
+        evts_x_job = self.evtmax/self.njobs
+        # First event:0 last: n-1
+        remain_evts = (self.evtmax % self.njobs)-1
+        
+        self.skipandperform = []
+        # Build a list of tuples containing the events to be skipped
+        # followed by the number of events to be processed
+        for i in xrange(self.njobs-1):
+            self.skipandperform.append( (i*evts_x_job,evts_x_job) )
+        # And the remaining
+        self.skipandperform.append( ((self.njobs-1)*evts_x_job,remain_evts) )
+
+    def __setneedenv__(self):
+        """..method:: __setneedenv__() 
+
+        Relevant environment in an cmsRun job:
+        """
+        self.typealias = 'cms'
+        self.relevantvar =  [ ("CMSSW_BASE","eval `scram runtime -sh`") ] 
+
+    def py_cfg_modification(self):
+        """Be sure that the FilesInput and SkipEvents are used
+        accordingly in python config
+        """
+        # Use wildcars @EVT@ @SKPEVTS@ @BLAH@ to subtitute
+        pass
+
+    def preparejobs(self,extra_setup=''):
+        """..method:: preparejobs() -> listofjobs
+        
+        main function which builds the folder structure
+        and the needed files of the job, in order to be
+        sent to the cluster
+        """
+        import os
+        # Obtaining some cmssw related-info (asetup,release,...)
+        usersetupfolder = self.getuserasetupfolder()
+        
+        # setting up the folder structure to send the jobs
+        # including the bashscripts
+        return self.settingfolders(usersetupfolder,extra_setup)
+
+    def getuserasetupfolder(self):
+        """..method:: getuserasetupfolder() -> fullnameuser
+        get the current cmssw base folder 
+        """
+        import os
+
+        basedir = os.getenv('CMSSW_BASE')
+        # check that the folder exists
+        if not basedir or not os.path.isdir(basedir):
+            message = 'The CMSSW environment should be set '
+            message += 'before running this script'
+            raise RuntimeError(message)
+        return basedir
+
+    def createbashscript(self,**kw):
+        """..method:: createbashscript 
+         
+        function which creates the specific bashscript(s). Depend on the 
+        type of job
+        """
+        import os
+        import datetime,time
+
+        class placeholder(object):
+            def __init__(self):
+                self.setupfolder=None
+                self.extra_asetup=''
+
+            def haveallvars(self):
+                if not self.setupfolder:
+                    return False
+                return True
+        
+        ph = placeholder()
+        for var,value in kw.iteritems():
+            setattr(ph,var,value)
+        
+        if not ph.haveallvars():
+            message = "Note that the CMSSW BASE folder is needed to build the bash script"
+            raise RuntimeError(message)
+
+        ts = time.time()
+        timestamp = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+        bashfile = '#!/bin/bash\n\n'
+        bashfile += '# File created by the %s class [%s]\n\n' % (self.__class__.__name__,timestamp)
+        bashfile += 'cd {0}\n'.format(ph.setupfolder)
+        bashfile += 'eval `scram runtime -sh`\n'
+        bashfile += 'cd -\n'
+        # Create a guard against malformed Workers (those which uses the same $HOME)
+        bashfile += 'tmpdir=`mktemp -d`\ncd $tmpdir;\n\n'
+        bashfile += 'cp {0} .\n'.format(self.py_cfg)
+        # Introduce a new key with any thing you want to introduce in -c : kw['Name']='value'
+        bashfile +='cmsRun {0};\n'.format(self.py_cfg)
+        bashfile +="\ncp *.root %s/\n" % os.getcwd()
+        # remove the tmpdir
+        bashfile +="rm -rf $tmpdir\n"
+        f=open(self.scriptname,"w")
+        f.write(bashfile)
+        f.close()
+        os.chmod(self.scriptname,0755)
+
+    def create_cfg(self,nevents,skipevts):
+        """
+        skipevts
+        nevents
+        """
+        import os 
+
+        with open(self.py_cfg) as f:
+            l = f.read()
+        local_cfg = l
+        # create the local copy and subtitute the wildcards
+        for (wc,sb) in [ ('@EVTS@',nevents), ('@SKIPEVT@',skipevts) ]:
+            if(l.find(wc) == -1):
+                raise RuntimeError('Not found the wildcard "{0}" in the config'\
+                        ' python "{1}"'.format(wc,self.py_cfg))
+            local_cfg = local_cfg.replace(wc,str(sb))
+        final_cfg = local_cfg
+        
+        # Prepare to send different seed for generation/simulation jobs
+        if self.is_gensim:
+            # Look after the last module load 
+            ll = local_cfg.rfind('load(')
+            if ll == -1:
+                raise RuntimeError('Gen/Sim job which do not load any module"'\
+                        ' Contact developer with ERROR CODE: DNP01')
+            # Get the first end-of-line afterwards
+            eol = local_cfg.find('\n',ll)
+            # Extract the name of the process? (probably process ... )
+            pname = 'process'
+            # Add after the line what we want
+            newlines  = '\n\n# SEED changes per job: CREATED automaticaly by clustermanager#\n'
+            newlines += 'from IOMC.RandomEngine import RandomServiceHelper as rgmodule\n'
+            newlines += 'rgenhelper = rgmodule.RandomNumberServiceHelper({0}.RandomNumberGeneratorService)\n'.format(pname)
+            newlines += 'rgenhelper.populate()\n'
+            newlines += '# DONE:  CREATED automaticaly by clustermanager#\n\n'
+            # Final text
+            final_cfg = local_cfg[0:eol]+newlines+local_cfg[eol+1:-1]
+
+        with open(os.path.basename(self.py_cfg),"w") as fnew:
+            fnew.write(final_cfg)
+
+    def replace_str_infile(self,strtosubst,finalstr,filename=None):
+        """Replaces a string inside a file, useful for per-job dependent
+        string
+
+        Parameters
+        ----------
+        strtosubst: str
+            the string to be substituted
+        finalstr: the expression to substitute
+        filename: str [Default: self.scriptname]
+            the name of the file
+        """
+        if not filename:
+            filename=self.scriptname
+        with open(filename) as _f:
+            oldfiledata = _f.read()
+        filedata=oldfiledata.replace(strtosubst,str(finalstr))
+        # return to write
+        with open(filename,"w") as _fo:
+            _fo.write(filedata)
+            _fo.close()
+
+    def settingfolders(self,usersetupfolder,extra_setup=''):
+        """..method:: settingfolders()
+        create the folder structure to launch the jobs: for each job
+        a folder is created following the notation:
+          * cmsJob_self.jobname_jobdsc.index
+          
+        """
+        import os
+        from jobssender import jobdescription
+
+        cwd=os.getcwd()
+
+        jdlist = []
+        i=0
+        for (skipevts,nevents) in self.skipandperform:
+            # create a folder
+            foldername = "%sJob_%s_%i" % (self.typealias,self.jobname,i)
+            os.mkdir(foldername)
+            os.chdir(foldername)
+            # create the local bashscript
+            self.createbashscript(setupfolder=usersetupfolder,\
+                    extra_setup=extra_setup)
+            # Create the local py_cfg
+            self.create_cfg(nevents,skipevts)
+            # XXX: Provisional (or not): Some keywords to be substitute 
+            # (job-index dependent)
+            self.replace_str_infile("%JOBNUMBER_PLUS_ONE",i+1)
+            # Registring the jobs in jobdescription class instances
+            jdlist.append( 
+                    jobdescription(path=foldername,script=self.jobname,index=i)
+                    )
+            jdlist[-1].state   = 'configured'
+            jdlist[-1].status  = 'ok'
+            jdlist[-1].workenv = self
+            #self.setjobstate(jdlist[-1],'configuring') ---> Should I define one?
+            os.chdir(cwd)
+            i+=1
+
+        return jdlist
+
+    @staticmethod
+    def checkfinishedjob(jobdsc,logfilename):
+        """..method:: checkfinishedjob(jobdsc) -> status
+        
+        using the datamember 'successjobcode' perform a check
+        to the job (jobdsc) to see if it is found the expected
+        outputs or success codes
+
+        FIXME: Static class do not have make use of the self?
+        """
+        succesjobcode_tf=['PyJobTransforms.main','trf exit code 0']
+        succesjobcode_jo=['Py:Athena','INFO leaving with code 0: "successful run"']
+        import os
+        # Athena jobs outputs inside folder defined as:
+        #folderout = os.path.join(jobdsc.path,'LSFJOB_'+str(jobdsc.ID))
+        # outfile
+        #logout = os.path.join(folderout,"STDOUT")
+        # -- defined as logfilename
+        logout = os.path.join(jobdsc.path,logfilename)
+        if not os.path.isfile(logout):
+            if DEBUG:
+                print "Not found the logout file '%s'" % logout
+            return 'fail'
+
+        f = open(logout)
+        lines = f.readlines()
+        f.close()
+        # usually is in the end of the file
+        for i in reversed(lines):
+            if i.find(succesjobcode_jo[-1]) != -1:
+                return 'ok'
+            if i.find(succesjobcode_tf[-1]) != -1:
+                return 'ok'
+        return 'fail' 
+
+    def sethowtocheckstatus(self):
+        """TO BE DEPRECATED!!!
+        ..method:: sethowtocheckstatus()
+        
+        An Athena job has succesfully finished if there is the line
+        'Py:Athena            INFO leaving with code 0: "successful run"'
+        """
+        self.succesjobcode=['Py:Athena','INFO leaving with code 0: "successful run"']
+
+
+
+# Concrete workenv class for athena jobs
+workenv.register(cmsjob)
 
 ## -- Concrete implementation: EUtelescope/Marlin job
 class marlinjob(workenv):
