@@ -136,6 +136,8 @@ class clusterspec(object):
         self.killcom     = None
         # List of jobdescription instances
         #self.joblist     = joblist
+        # The suffix for the cluster job
+        self.script_suffix = None
 
     def submit(self,jobdsc):
         """Send a job to the cluster
@@ -153,7 +155,10 @@ class clusterspec(object):
         command = [ self.sendcom ]
         for i in self.extraopt:
             command.append(i)
-        command.append(jobdsc.script+'.sh')
+        command.append(jobdsc.script+'.'+self.script_suffix)
+        # Extra function for the creation of cluster scripts
+        self.create_script_if_needed(jobdsc.script)
+
         # Send the command
         if self.simulate:
             p = self.simulatedresponse('submit')
@@ -274,6 +279,13 @@ class clusterspec(object):
             print "WARNING::JOB [%s] not in running or submitted state,"\
                     " kill has no sense" % jobdsc.index
 
+    @abstractmethod
+    def create_script_if_needed(self,filename):
+        """..method:: create_script_if_neeed() 
+        Create cluster specific files (for HTcondor actually)
+        """
+        raise NotImplementedError("Class %s doesn't implement "\
+                "create_scrip_if_needed(filename)" % (self.__class__.__name__))
 
     @abstractmethod
     def failed(self):
@@ -299,6 +311,11 @@ class cerncluster(clusterspec):
     """..class:: cerncluster
     Concrete implementation of the clusterspec class dealing with
     the cluster at cern (usign lxplus as UI)
+
+    Notes
+    -----
+    There is an API of the HTCondor  (import htcondor) which could
+    be worth it to introduce..
     """
     def __init__(self,**kw):#joblist=None,**kw):
         """..class:: cerncluster 
@@ -306,14 +323,21 @@ class cerncluster(clusterspec):
         the cluster at cern (usign lxplus as UI)
         """
         super(cerncluster,self).__init__(**kw)#joblist,**kw)
-        self.sendcom   = 'bsub'
-        self.statecom  = 'bjobs'
+        self.sendcom   = 'condor_submit'
+        self.statecom  = 'condor_q -nobatch'
         self.killcom   = 'bkill'
+        self.script_suffix = 'sub'
         if kw.has_key('queue') and kw['queue']:
             queue = kw['queue']
+            # FIXME: Check that is a condor queue
+            # max. duration: 20 min., 1h, 2h, 8h, 1d, 3d, 1w
+            available_q = [ 'espresso', 'microcentury', 'longlunch', 'workday',
+                    'tomorrow', 'testmatch', 'nextweek' ]
         else:
-            queue = '8nh'
-        self.extraopt  += [ '-q', queue ]
+            queue = 'longlunch'
+        self.extraopt  += [ '--queue', queue ]
+        ## Need to include the cluster file: need the jobdescription
+        
     
     def simulatedresponse(self,action):
         """..method:: simulatedresponse() -> clusterresponse
@@ -325,11 +349,8 @@ class cerncluster(clusterspec):
         import random
 
         if action == 'submit':
-            i=xrange(0,9)
-            z=''
-            for j in random.sample(i,len(i)):
-                z+=str(j)
-            return ("Job SIMULATED-RESPONSE <%s>" % (z),"")
+            rdnjobnum= int(random.uniform(0,9999999))
+            return ("1 job(s) submitted to cluster {0}.".format(rdnjobnum),"")
         elif action == 'checking':
             potentialstate = [ 'submitted', 'running', 'finished', 'aborted',
                     'submitted','running','finished', 'running', 'finished',
@@ -337,14 +358,15 @@ class cerncluster(clusterspec):
             # using random to choose which one is currently the job, biasing
             # to finished and trying to keep aborted less probable
             simstate = random.choice(potentialstate)
+            rdnjobnum= int(random.uniform(0,9999999))
             if simstate == 'submitted':
-                mess = ("JOBID <123456789>:\njob status PEND","")
+                mess = ("\n\n\n{0}.0 duarte 10/1 12:09 0+00:00:00 I  0 0.0 kki.sh {0}.0".format(rdnjobnum),"")
             elif simstate == 'running':
-                mess = ("JOBID <123456789>:\njob status RUN","")
+                mess = ("\n\n\n{0}.0 duarte 10/1 12:09 0+00:00:00 R  0 0.0 kki.sh {0}.0".format(rdnjobnum),"")
             elif simstate == 'finished':
-                mess =  ("Job <123456789> is not found","Job <123456789> is not found")
+                mess = ("\n\n\n{0}.0 duarte 10/1 12:09 0+00:00:00 C  0 0.0 kki.sh {0}.0".format(rdnjobnum),"")
             elif simstate == 'aborted':
-                mess = ("JOBID <123456789>:\njob status EXIT","")
+                mess = ("\n\n\n{0}.0 duarte 10/1 12:09 0+00:00:00 X  0 0.0 kki.sh {0}.0".format(rdnjobnum),"")
             return mess
         elif action == 'finishing':
             simstatus = [ 'ok','ok','ok','fail','ok','ok','ok']
@@ -357,47 +379,73 @@ class cerncluster(clusterspec):
 
     def getjobidfromcommand(self,p):
         """..method:: getjobidfromcommand()
-        function to obtain the job-ID from the cluster command
-        when it is sended (using sendcom)
+        function to obtain the job-ID (clusterID, in HT-Condor notation) 
+        from the cluster command when it is sended (using sendcom)
         """
-        return int(p.split('Job')[-1].split('<')[1].split('>')[0])
+        return int(p.split('cluster ')[-1].split('.')[0])
     
     def getstatefromcommandline(self,p):
         """..method:: getstatefromcommandline() -> state,status
         function to parse the state of a job
+        
+        Parameters
+        ----------
+        p: (str,str)
+            tuple corresponding to the return value of the 
+            subprocess.Popen.communicate, i.e. (stdoutdata, stderrdat)
+
+        Returns
+        -------
+        id: (str,str)
+            the state and status
+        
+        Note
+        ----
+        An output example provided by the condor_q --nobatch command is:
+
+        -- Schedd: xxxxxxx.cern.ch : <XXX.XXX.XXX.XXX:XXXX?... @ 10/01/19 12:09:38
+         ID         OWNER            SUBMITTED     RUN_TIME ST PRI SIZE CMD
+         3205766.0   duarte         10/1  12:09   0+00:00:00 I  0    0.0 digijobs.sh 3205766.0
         """
-        # bjobs output
-        # JOBID USER STAT QUEUE FROM_HOST EXEC_HOST JOB_NAME SUBMIT_TIME
+        # condor_q output
+        # ID, OWNER, SUBMITTED, RUN_TIME, ST, PRI, SIZE, CMD
 
         isfinished=False
-        if p[0].find('not found') != -1 or \
-                p[1].find('not found') != -1: 
+        if p[0].find('0 jobs') != -1: 
             return 'finished','ok'
-        elif p[0].find('JOBID') == 0:
-            jobinfoline = p[0].split('\n')[1]
+        else:
+            # XXX-- Multiple job task : [3:-1]
+            jobinfoline = p[0].split('\n')[3]
             # Third element
-            status = jobinfoline.split()[2]
-            if status == 'PEND':
+            status = jobinfoline.split()[5]
+            if status == 'I':
                 return 'submitted','ok'
-            elif status == 'RUN':
+            elif status == 'R':
                 return 'running','ok'
-            elif status == 'DONE':
+            elif status == 'C':
                 return 'finished','ok'
-            elif status == 'EXIT':
+            # ??? Removed is aborted?
+            elif status == 'X':
                 return 'aborted','ok'
+            ## elif status == 'H':
+            #  HOLD status, waiting for someone to re-schedule the job
+            ## elif status == 'X':
+            #  rEMOVED status, 
+            ## elif status == 'S':
+            #  suspended  status, execution temp. suspended
             else:
                 message='I have no idea of the state parsed in the cluster'
                 message+=' as "%s". Parser should be updated\n' % status
                 message+='WARNING: forcing "None" state'
                 print message
                 return None,'fail'
-        else:
-            message='No interpretation yet of the message (%s,%s).' % (p[0],p[1])
-            message+='Cluster message parser needs to be updated'
-            message+='(cerncluster.getstatefromcommandline method).'
-            message+='\nWARNING: forcing "aborted" state'
-            print message
-            return 'aborted','fail'
+        #else:
+        #    message='No interpretation yet of the message (%s,%s).' % (p[0],p[1])
+        #    message+='Cluster message parser needs to be updated'
+        #    message+='(cerncluster.getstatefromcommandline method).'
+        #    message+='\nWARNING: forcing "aborted" state'
+        #    print message
+        #    return 'aborted','fail'
     
     # DEPRECATED
     #def setjobstate(self,jobds,command):
@@ -432,9 +480,32 @@ class cerncluster(clusterspec):
         """
         raise NotImplementedError("Class %s doesn't implement "\
                  "done()" % (self.__class__.__name__))
+
+    def create_script_if_needed(self,filename):
+        """Create the file to be sent to the cluster
+        """
+        import os 
+
+        lines = ["executable              = {0}".format(filename+'.sh\n')]
+        lines+= ["arguments               = $(ClusterId)$(ProcId)\n"]
+        lines+= ["output                  = output/$(ClusterId).$(ProcId).out\n"]
+        lines+= ["error                   = output/$(ClusterId).$(ProcId).err\n"]
+        lines+= ["log                     = output/$(ClusterId).log\n"]
+        lines+= ["queue\n"]
+        #lines+= ["queue filename matching (exec/job_*sh)"]
+        with open('{0}.{1}'.format(filename,self.script_suffix), 'w') as f:#
+            f.writelines(lines)
+        # And create the output and log folders (if there are not)
+        try: 
+            os.mkdir('output')
+        except OSError:
+            pass
+        try: 
+            os.mkdir('log')
+        except OSError:
+            pass
     
 clusterspec.register(cerncluster)
-
 
 class taucluster(clusterspec):
     """Concrete implementation of the clusterspec class dealing with
@@ -454,6 +525,7 @@ class taucluster(clusterspec):
         self.sendcom   = 'qsub'
         self.statecom  = 'qstat'
         self.killcom   = 'qdel'
+        self.script_suffix = 'sh'
         if kw.has_key('queue') and kw['queue']:
             queue = kw['queue']
         else:
@@ -591,6 +663,7 @@ class taucluster(clusterspec):
             elif status == 'E':
                 return 'aborted','ok'
             else:
+                kw
                 message='I have no idea of the state parsed in the cluster'
                 message+=' as "%s". Parser should be updated\n' % status
                 message+='WARNING: forcing "None" state'
@@ -620,6 +693,11 @@ class taucluster(clusterspec):
         """
         raise NotImplementedError("Class %s doesn't implement "\
                  "done()" % (self.__class__.__name__))
+
+    def create_script_if_needed(self,filename):
+        """Do not need to do anything
+        """
+        return
     
 clusterspec.register(taucluster)
 
@@ -644,8 +722,11 @@ def cluster_builder(**kw):
     # build the proper cluster depending where we are
     # cern and T2 at tau 
     if machine.find('lxplus') == 0:
+        # Add the suffix for the sender script
+        kw['script_suffix'] = 'sub'
         return cerncluster(**kw)
     elif machine.find('tau.ac.il') != -1:
+        kw['script_suffix'] = 'sh'
         return taucluster(**kw)
     else:
         raise NotImplementedError("missing cluster for UI: '{0}'".format(machine))             
